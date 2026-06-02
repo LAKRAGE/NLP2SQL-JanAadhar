@@ -172,10 +172,11 @@ class PromptBuilder:
         # If placed after, the family count rule would be silently dropped from every prompt.
         if "family.family_id" in result.columns and "member.family_id" in result.columns:
             dynamic_rules.append(
-                "- member counts per family: GROUP BY family.family_id, family.family_head_name "
-                "then HAVING COUNT(*) > N. "
-                "SELECT family.family_head_name — never select family_id (it is an internal surrogate key). "
-                "Use COUNT(*) not COUNT(member.member_id)."
+                "- member counts per family: use the member table only — no JOIN needed. "
+                "Every member row already has family_id. "
+                "GROUP BY member.family_id HAVING COUNT(*) > N. "
+                "Use COUNT(*) not COUNT(member.member_id). "
+                "Do not join the family table just to count members per family."
             )
 
         # ── Compute AFTER all appends so every rule is included ───────────────

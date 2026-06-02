@@ -303,32 +303,9 @@ def _post_process_sql(sql: str) -> str:
         sql, flags=re.IGNORECASE,
     )
 
-    # Step 13: Remove stray ", table.family_id" from SELECT when family_head_name is present
-    if re.search(r"family_head_name", sql, re.IGNORECASE):
-        sql = re.sub(
-            r",\s*\w+\.family_id\b",
-            "",
-            sql, flags=re.IGNORECASE,
-        )
-
-    # Step 14: Replace bare table.family_id in SELECT with family.family_head_name.
-    # BUG FIX: always use the 'family.' prefix — family_head_name lives on the
-    # family table, NOT on the member table. Never reuse the captured source prefix.
-    sql = re.sub(
-        r"\bSELECT\s+(COUNT\(\*\)\s+AS\s+\w+,\s*)\w+\.family_id\b",
-        r"SELECT \1family.family_head_name",
-        sql, flags=re.IGNORECASE,
-    )
-    sql = re.sub(
-        r"\bSELECT\s+\w+\.family_id,\s*(COUNT\(\*\))",
-        r"SELECT family.family_head_name, \1",
-        sql, flags=re.IGNORECASE,
-    )
-    sql = re.sub(
-        r"\bSELECT\s+DISTINCT\s+\w+\.family_id\b",
-        "SELECT DISTINCT family.family_head_name",
-        sql, flags=re.IGNORECASE,
-    )
+    # Step 13 and Step 14 removed: family count queries now use only the member
+    # table (GROUP BY member.family_id) so family_id in SELECT is correct.
+    # No JOIN to family table means family_head_name is not available to substitute.
 
     # Step 15: Remove unnecessary 'AS display_column' alias
     sql = re.sub(
