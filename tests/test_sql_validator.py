@@ -132,3 +132,75 @@ def test_post_process_caste_bilingual_expansion():
 
 
 
+def test_post_process_bank_in_clause_case_insensitivity():
+    from app import _post_process_sql
+
+    # Mixed-case bank names in IN clause should all be uppercased
+    sql = "SELECT * FROM bank_account WHERE bank_account.bank_name IN ('sbi', 'HDFC', 'Icici');"
+    result = _post_process_sql(sql)
+    assert "UPPER(" in result
+    assert "'SBI'" in result
+    assert "'HDFC'" in result
+    assert "'ICICI'" in result
+
+    # Single bank name IN clause
+    sql2 = "SELECT * FROM bank_account WHERE bank_name IN ('pnb');"
+    result2 = _post_process_sql(sql2)
+    assert "UPPER(" in result2
+    assert "'PNB'" in result2
+
+
+def test_post_process_categorical_in_clause_normalization():
+    from app import _post_process_sql
+
+    # gender IN clause — mixed case aliases → canonical
+    sql_gender = "SELECT * FROM member WHERE member.gender IN ('male', 'Female');"
+    result = _post_process_sql(sql_gender)
+    assert "'Male'" in result
+    assert "'Female'" in result
+
+    # caste_category IN clause — variant names → canonical codes
+    sql_cat = "SELECT * FROM member WHERE member.caste_category IN ('general', 'SC', 'obc');"
+    result = _post_process_sql(sql_cat)
+    assert "'GEN'" in result
+    assert "'SC'" in result
+    assert "'OBC'" in result
+
+    # marital_status IN clause — variant names → canonical values
+    sql_marital = "SELECT * FROM member WHERE member.marital_status IN ('widow', 'single', 'married');"
+    result = _post_process_sql(sql_marital)
+    assert "'Widow'" in result
+    assert "'Unmarried'" in result
+    assert "'Married'" in result
+
+
+def test_post_process_district_in_clause_all_known_districts():
+    from app import _post_process_sql
+
+    # All values are known Rajasthan districts → stays as IN with canonical casing
+    sql = "SELECT * FROM family WHERE family.district IN ('jaipur', 'JODHPUR', 'Udaipur');"
+    result = _post_process_sql(sql)
+    assert "DISTRICT IN" in result.upper()
+    assert "'Jaipur'" in result
+    assert "'Jodhpur'" in result
+    assert "'Udaipur'" in result
+
+
+def test_post_process_district_in_clause_non_district_redirect():
+    from app import _post_process_sql
+
+    # Srinagar is NOT a Rajasthan district → should be redirected to block/village
+    sql = "SELECT * FROM family WHERE family.district IN ('Srinagar', 'Jaipur');"
+    result = _post_process_sql(sql)
+    # Srinagar should be redirected to block/village LIKE conditions
+    assert "block LIKE '%Srinagar%'" in result or "village LIKE '%Srinagar%'" in result
+    # Jaipur is a known district → should stay as district = 'Jaipur'
+    assert "district = 'Jaipur'" in result
+
+    # Fully non-district list → both redirected
+    sql2 = "SELECT * FROM family WHERE f.district IN ('Beejasar', 'Srinagar');"
+    result2 = _post_process_sql(sql2)
+    assert "block LIKE '%Beejasar%'" in result2 or "village LIKE '%Beejasar%'" in result2
+    assert "block LIKE '%Srinagar%'" in result2 or "village LIKE '%Srinagar%'" in result2
+    assert "district IN" not in result2.upper()
+
