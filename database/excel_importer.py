@@ -42,7 +42,7 @@ def clean_caste(val) -> str | None:
 
 
 def import_excel_dataset(
-    source: str | Path | BinaryIO = "dummy_dataset/Dummy_Data_Set.xlsx",
+    source: str | Path | BinaryIO = "new_dataset/Jan_Aadhaar_500K_FINAL.xlsx",
     source_name: str | None = None,
     database_url: str | None = None,
 ) -> DatasetImportReport:
@@ -74,7 +74,7 @@ def import_excel_dataset(
     # Clean row values to dictionary
     rows = data.where(pd.notna(data), None).to_dict(orient="records")
     
-    citizens: list[Citizen] = []
+    citizen_dicts: list[dict[str, Any]] = []
 
     for row in rows:
         m_id = _integer(row.get("MEMBER_ID"))
@@ -90,38 +90,38 @@ def import_excel_dataset(
         gender_raw = _text(row.get("GENDER"))
         gender = gender_raw.title() if gender_raw else "Unknown"
 
-        citizens.append(
-            Citizen(
-                member_id=m_id,
-                enrollment_id=enrollment_id,
-                district_name_eng=district or "Unknown",
-                is_rural=_integer(row.get("IS_RURAL")),
-                block_name_eng=_text(row.get("BLOCK_NAME_ENG")),
-                city_name_eng=_text(row.get("CITY_NAME_ENG")),
-                ward_name_eng=_text(row.get("WARD_NAME_ENG")),
-                gp_name_eng=_text(row.get("GP_NAME_ENG")),
-                vill_name_eng=_text(row.get("VILL_NAME_ENG")),
-                mem_type=_text(row.get("MEM_TYPE")),
-                relation_with_hof=_text(row.get("RELATION_WITH_HOF")),
-                name_en=str(row.get("NAME_EN")).strip(),
-                father_name_en=_text(row.get("FATHER_NAME_EN")),
-                mother_name_en=_text(row.get("MOTHER_NAME_EN")),
-                marital_status=_text(row.get("MARITAL_STATUS")),
-                spouce_name_en=_text(row.get("SPOUCE_NAME_EN")),
-                dob=_date(row.get("DOB")),
-                age=_integer(row.get("AGE")),
-                gender=gender,
-                caste_category=_text(row.get("CASTE_CATEGORY")),
-                caste=clean_caste(row.get("CASTE")),
-                bank=_text(row.get("BANK")),
-                ifsc_code=_text(row.get("IFSC_CODE")),
-                account_no=_text(row.get("ACCOUNT_NO")),
-                mobile_no=_text(row.get("MOBILE_NO")),
-                income=_integer(row.get("INCOME")),
-                occupation=_text(row.get("OCCUPATION")),
-                minority=_text(row.get("MINORITY")),
-                education=_text(row.get("EDUCATION")),
-            )
+        citizen_dicts.append(
+            {
+                "member_id": m_id,
+                "enrollment_id": enrollment_id,
+                "district_name_eng": district or "Unknown",
+                "is_rural": _integer(row.get("IS_RURAL")),
+                "block_name_eng": _text(row.get("BLOCK_NAME_ENG")),
+                "city_name_eng": _text(row.get("CITY_NAME_ENG")),
+                "ward_name_eng": _text(row.get("WARD_NAME_ENG")),
+                "gp_name_eng": _text(row.get("GP_NAME_ENG")),
+                "vill_name_eng": _text(row.get("VILL_NAME_ENG")),
+                "mem_type": _text(row.get("MEM_TYPE")),
+                "relation_with_hof": _text(row.get("RELATION_WITH_HOF")),
+                "name_en": str(row.get("NAME_EN")).strip(),
+                "father_name_en": _text(row.get("FATHER_NAME_EN")),
+                "mother_name_en": _text(row.get("MOTHER_NAME_EN")),
+                "marital_status": _text(row.get("MARITAL_STATUS")),
+                "spouce_name_en": _text(row.get("SPOUCE_NAME_EN")),
+                "dob": _date(row.get("DOB")),
+                "age": _integer(row.get("AGE")),
+                "gender": gender,
+                "caste_category": _text(row.get("CASTE_CATEGORY")),
+                "caste": clean_caste(row.get("CASTE")),
+                "bank": _text(row.get("BANK")),
+                "ifsc_code": _text(row.get("IFSC_CODE")),
+                "account_no": _text(row.get("ACCOUNT_NO")),
+                "mobile_no": _text(row.get("MOBILE_NO")),
+                "income": _integer(row.get("INCOME")),
+                "occupation": _text(row.get("OCCUPATION")),
+                "minority": _text(row.get("MINORITY")),
+                "education": _text(row.get("EDUCATION")),
+            }
         )
 
     # 4. Truncate target table non-destructively
@@ -138,15 +138,17 @@ def import_excel_dataset(
         else:
             conn.execute(text("TRUNCATE TABLE citizen RESTART IDENTITY CASCADE;"))
 
-    # 5. Bulk ingest data
-    with get_session(database_url) as session:
-        session.add_all(citizens)
-        session.commit()
+    # 5. Bulk ingest data using SQLAlchemy Core bulk insert in chunks of 50,000
+    chunk_size = 50000
+    with engine.begin() as conn:
+        for i in range(0, len(citizen_dicts), chunk_size):
+            chunk = citizen_dicts[i:i + chunk_size]
+            conn.execute(Citizen.__table__.insert(), chunk)
 
     resolved_name = source_name or getattr(source, "name", None) or str(source)
     return DatasetImportReport(
         source_name=Path(str(resolved_name)).name,
-        rows_loaded=len(citizens),
+        rows_loaded=len(citizen_dicts),
     )
 
 

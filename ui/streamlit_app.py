@@ -34,15 +34,15 @@ def render() -> None:
             invalidate_cache_singleton()
             st.success("Semantic query cache cleared.")
 
-        if st.button("Load default dummy dataset"):
-            with st.spinner("Loading records from Dummy_Data_Set.xlsx..."):
+        if st.button("Load default primary dataset (500K)"):
+            with st.spinner("Loading records from Jan_Aadhaar_500K_FINAL.xlsx..."):
                 try:
-                    import_excel_dataset("dummy_dataset/Dummy_Data_Set.xlsx")
+                    import_excel_dataset("new_dataset/Jan_Aadhaar_500K_FINAL.xlsx")
                 except Exception as exc:
                     st.error(str(exc))
                 else:
-                    st.success("Demo database is ready using Dummy_Data_Set.xlsx.")
-        uploaded_data = st.file_uploader("Import dummy Excel dataset", type=["xlsx"])
+                    st.success("Primary database is ready using Jan_Aadhaar_500K_FINAL.xlsx.")
+        uploaded_data = st.file_uploader("Import custom Excel dataset", type=["xlsx"])
         if uploaded_data is not None and st.button("Load uploaded dataset"):
             with st.spinner("Loading records into the local SQLite database..."):
                 try:

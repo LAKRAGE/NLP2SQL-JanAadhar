@@ -11,6 +11,17 @@
     }
   },
   {
+    "id": "4f81d9373cc22dccd0b016881fa7731e",
+    "question": "Show all citizens living in Sanganer.",
+    "sql": "SELECT * FROM citizen WHERE vill_name_eng LIKE '%Sanganer%';",
+    "metadata": {
+      "numbers": "",
+      "intent": "list",
+      "gender": "none",
+      "locations": "sanganer"
+    }
+  },
+  {
     "id": "33183782a43c8d225d02e9a2041969e1",
     "question": "List all Rajput citizens who belong to GEN category.",
     "sql": "SELECT name_en, age, gender, district_name_eng FROM citizen WHERE (caste LIKE '%Rajpoot%' OR caste LIKE '%\u0930\u093e\u091c\u092a\u0942\u0924%' OR caste LIKE '%Rajput%') AND caste_category = 'GEN';",
@@ -22,12 +33,45 @@
     }
   },
   {
-    "id": "bbaec2dbdc3378e72a3e9d20b60e5c7a",
-    "question": "List all citizens whose family income is between 1 lakh and 3 lakhs. ",
-    "sql": "SELECT name_en, age, gender, district_name_eng FROM citizen WHERE enrollment_id IN (SELECT enrollment_id FROM citizen GROUP BY enrollment_id HAVING SUM(income) BETWEEN 100000 AND 300000);",
+    "id": "6eeb9d2523a92d359aaadb35abc11355",
+    "question": "all femail benificiaries in jaipor",
+    "sql": "SELECT name_en, age, gender, district_name_eng FROM citizen WHERE gender = 'Female' AND district_name_eng = 'Jaipur' LIMIT 200;",
     "metadata": {
-      "numbers": "1,3,between",
+      "numbers": "",
+      "intent": "unknown",
+      "gender": "none",
+      "locations": ""
+    }
+  },
+  {
+    "id": "3006ef0e22ff901ff1a3aed28bf6a741",
+    "question": "How many females are there in Jodhpur?",
+    "sql": "SELECT COUNT(*) AS female_count FROM citizen WHERE gender = 'Female' AND district_name_eng = 'Jodhpur';",
+    "metadata": {
+      "numbers": "",
+      "intent": "count",
+      "gender": "none",
+      "locations": "jodhpur"
+    }
+  },
+  {
+    "id": "c102c320649bea6e437a1b64b0254eac",
+    "question": "Show details of Baldev Oswal in Alwar district",
+    "sql": "SELECT name_en, age, gender, district_name_eng FROM citizen WHERE name_en LIKE '%Baldev Oswal%' AND district_name_eng = 'Alwar';",
+    "metadata": {
+      "numbers": "",
       "intent": "list",
+      "gender": "none",
+      "locations": "alwar"
+    }
+  },
+  {
+    "id": "3432ad1ed9fa706c10ea295066640f3b",
+    "question": "Show count of people 10th pass and above",
+    "sql": "SELECT COUNT(*) AS count_of_people_10th_pass_and_above FROM citizen WHERE education IN ('10 Pass', '12 Pass', 'Graduate', 'Post Graduate');",
+    "metadata": {
+      "numbers": "above",
+      "intent": "count",
       "gender": "none",
       "locations": ""
     }

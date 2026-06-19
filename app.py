@@ -861,7 +861,7 @@ def run_cli() -> None:
     parser.add_argument("question", nargs="*", help="Natural language question to convert into SQL.")
     parser.add_argument("--build-index", action="store_true", help="Force rebuild the FAISS schema index.")
     parser.add_argument("--seed-demo-db", action="store_true", help="Create and seed the SQLite demo database.")
-    parser.add_argument("--import-excel", help="Replace the local demo data with an Excel dummy dataset.")
+    parser.add_argument("--import-excel", help="Replace the local demo data with a custom Excel dataset.")
     parser.add_argument("--show-results", action="store_true", help="Display up to 20 matching database rows after generating SQL.")
     parser.add_argument("--no-explain", action="store_true", help="Skip EXPLAIN query plan generation.")
     parser.add_argument("--run-profile-query", action="store_true", help="Execute the generated SQL while profiling.")
@@ -880,8 +880,8 @@ def run_cli() -> None:
         print("Semantic cache cleared.")
 
     if args.seed_demo_db:
-        import_excel_dataset("dummy_dataset/Dummy_Data_Set.xlsx")
-        print(f"Demo database ready at {settings.sqlite_path} loaded from Dummy_Data_Set.xlsx")
+        import_excel_dataset("new_dataset/Jan_Aadhaar_500K_FINAL.xlsx")
+        print(f"Primary database ready at {settings.sqlite_path} loaded from Jan_Aadhaar_500K_FINAL.xlsx")
     if args.import_excel:
         report = import_excel_dataset(args.import_excel)
         print(f"Imported {report.rows_loaded} rows from {report.source_name}.")
