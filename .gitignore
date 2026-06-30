@@ -22,9 +22,9 @@ data/schema_metadata.json
 data/streamlit.stdout.log
 data/streamlit.stderr.log
 
-# ── Dummy dataset Excel (large binary, tracked separately if needed) ───────────
-# Uncomment the line below if you don't want the Excel file on GitHub
-# dummy_dataset/
+# ── Dataset Excel (large binary, tracked separately if needed) ───────────────
+dummy_dataset/
+new_dataset/
 
 # ── Scratch / temp files ───────────────────────────────────────────────────────
 scratch/

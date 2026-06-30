@@ -3,12 +3,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import pandas as pd
 from sqlalchemy import text
 from database.connection import get_engine, get_session
-from database.models import BankDetails, Family, Member
+from database.models import Citizen
 from normalization.fuzzy_match import phonetic_key
 
 
@@ -29,10 +29,7 @@ DISTRICT_VALUE_NORMALIZATION = {
 @dataclass(frozen=True)
 class DatasetImportReport:
     source_name: str
-    members_loaded: int
-    families_loaded: int
-    bank_records_loaded: int
-    skipped_bank_records: int
+    rows_loaded: int
 
 
 def clean_caste(val) -> str | None:
@@ -46,13 +43,22 @@ def clean_caste(val) -> str | None:
 
 
 def import_excel_dataset(
-    source: str | Path | BinaryIO,
+    source: str | Path | BinaryIO = "new_dataset/Jan_Aadhaar_500K_FINAL.xlsx",
     source_name: str | None = None,
     database_url: str | None = None,
 ) -> DatasetImportReport:
     # 1. Read dataset
-    if isinstance(source, (str, Path)) and str(source).lower().endswith(".csv"):
-        data = pd.read_csv(source)
+    if isinstance(source, (str, Path)):
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            # Resolve relative to project root
+            from config.settings import PROJECT_ROOT
+            source_path = PROJECT_ROOT / source_path
+        
+        if str(source_path).lower().endswith(".csv"):
+            data = pd.read_csv(source_path)
+        else:
+            data = pd.read_excel(source_path)
     else:
         data = pd.read_excel(source)
 
@@ -69,101 +75,66 @@ def import_excel_dataset(
     # Clean row values to dictionary
     rows = data.where(pd.notna(data), None).to_dict(orient="records")
     
-    # 2. Group by ENROLLMENT_ID to map Families correctly
-    family_map: dict[str, dict] = {}
-    family_members_list: dict[str, list[dict]] = {}
+    citizen_dicts: list[dict[str, Any]] = []
 
     for row in rows:
+        m_id = _integer(row.get("MEMBER_ID"))
         enrollment_id = _text(row.get("ENROLLMENT_ID"))
-        member_id = _integer(row.get("MEMBER_ID"))
-        if not enrollment_id or member_id is None:
+        if m_id is None or not enrollment_id:
             continue  # Skip rows missing crucial identifiers
         
-        family_members_list.setdefault(enrollment_id, []).append(row)
-
-    # 3. Build Families and Members
-    families: list[Family] = []
-    members: list[Member] = []
-    banks: list[BankDetails] = []
-
-    family_id_counter = 1
-    for enrollment_id, m_rows in family_members_list.items():
-        # Identify the Head of Family (HOF) or fallback to first member
-        hof_row = m_rows[0]
-        for r in m_rows:
-            mem_type = _text(r.get("MEM_TYPE"))
-            relation = _text(r.get("RELATION_WITH_HOF"))
-            if (mem_type and mem_type.upper() == "HOF") or (relation and relation.lower() in ("self", "head")):
-                hof_row = r
-                break
+        district = _text(row.get("DISTRICT_NAME_ENG"))
+        if district:
+            district = DISTRICT_VALUE_NORMALIZATION.get(district, district)
         
-        district = DISTRICT_VALUE_NORMALIZATION.get(str(hof_row["DISTRICT_NAME_ENG"]), str(hof_row["DISTRICT_NAME_ENG"]))
-        
-        _head_name = str(hof_row["NAME_EN"])
-        families.append(
-            Family(
-                family_id=family_id_counter,
-                jan_aadhaar_number=enrollment_id,
-                family_head_name=_head_name,
-                family_head_name_phonetic=phonetic_key(_head_name),
-                district=district,
-                city=_text(hof_row.get("CITY_NAME_ENG")),
-                block=_text(hof_row.get("BLOCK_NAME_ENG")),
-                gram_panchayat=_text(hof_row.get("GP_NAME_ENG")),
-                village=_text(hof_row.get("VILL_NAME_ENG")),
-                ward=_text(hof_row.get("WARD_NAME_ENG")),
-                is_rural=_boolean(hof_row.get("IS_RURAL")),
-            )
+        # Gender canonicalization
+        gender_raw = _text(row.get("GENDER"))
+        gender = gender_raw.title() if gender_raw else "Unknown"
+
+        _name = str(row.get("NAME_EN")).strip()
+        _fname = _text(row.get("FATHER_NAME_EN"))
+        _mname = _text(row.get("MOTHER_NAME_EN"))
+        _sname = _text(row.get("SPOUCE_NAME_EN"))
+
+        citizen_dicts.append(
+            {
+                "member_id": m_id,
+                "enrollment_id": enrollment_id,
+                "district_name_eng": district or "Unknown",
+                "is_rural": _integer(row.get("IS_RURAL")),
+                "block_name_eng": _text(row.get("BLOCK_NAME_ENG")),
+                "city_name_eng": _text(row.get("CITY_NAME_ENG")),
+                "ward_name_eng": _text(row.get("WARD_NAME_ENG")),
+                "gp_name_eng": _text(row.get("GP_NAME_ENG")),
+                "vill_name_eng": _text(row.get("VILL_NAME_ENG")),
+                "mem_type": _text(row.get("MEM_TYPE")),
+                "relation_with_hof": _text(row.get("RELATION_WITH_HOF")),
+                "name_en": _name,
+                "name_en_phonetic": phonetic_key(_name),
+                "father_name_en": _fname,
+                "father_name_en_phonetic": phonetic_key(_fname) if _fname else None,
+                "mother_name_en": _mname,
+                "mother_name_en_phonetic": phonetic_key(_mname) if _mname else None,
+                "marital_status": _text(row.get("MARITAL_STATUS")),
+                "spouce_name_en": _sname,
+                "spouce_name_en_phonetic": phonetic_key(_sname) if _sname else None,
+                "dob": _date(row.get("DOB")),
+                "age": _integer(row.get("AGE")),
+                "gender": gender,
+                "caste_category": _text(row.get("CASTE_CATEGORY")),
+                "caste": clean_caste(row.get("CASTE")),
+                "bank": _text(row.get("BANK")),
+                "ifsc_code": _text(row.get("IFSC_CODE")),
+                "account_no": _text(row.get("ACCOUNT_NO")),
+                "mobile_no": _text(row.get("MOBILE_NO")),
+                "income": _integer(row.get("INCOME")),
+                "occupation": _text(row.get("OCCUPATION")),
+                "minority": _text(row.get("MINORITY")),
+                "education": _text(row.get("EDUCATION")),
+            }
         )
 
-        for r in m_rows:
-            m_id = int(r["MEMBER_ID"])
-            _mname = str(r["NAME_EN"])
-            _fname = _text(r.get("FATHER_NAME_EN"))
-            _mname2 = _text(r.get("MOTHER_NAME_EN"))
-            _sname = _text(r.get("SPOUCE_NAME_EN"))
-            members.append(
-                Member(
-                    member_id=m_id,
-                    family_id=family_id_counter,
-                    jan_aadhaar_member_id=f"{enrollment_id}-{m_id}",
-                    member_name=_mname,
-                    member_name_phonetic=phonetic_key(_mname),
-                    father_name=_fname,
-                    father_name_phonetic=phonetic_key(_fname) if _fname else None,
-                    mother_name=_mname2,
-                    mother_name_phonetic=phonetic_key(_mname2) if _mname2 else None,
-                    spouse_name=_sname,
-                    spouse_name_phonetic=phonetic_key(_sname) if _sname else None,
-                    date_of_birth=_date(r.get("DOB")),
-                    age=_integer(r.get("AGE")),
-                    gender=str(r["GENDER"]).title(),
-                    mobile_number=_text(r.get("MOBILE_NO")),
-                    caste_category=_text(r.get("CASTE_CATEGORY")),
-                    marital_status=_text(r.get("MARITAL_STATUS")),
-                    member_type=_text(r.get("MEM_TYPE")),
-                    relation_with_hof=_text(r.get("RELATION_WITH_HOF")),
-                    caste=clean_caste(r.get("CASTE")),
-                    income=_integer(r.get("INCOME")),
-                    occupation=_text(r.get("OCCUPATION")),
-                    minority=_text(r.get("MINORITY")),
-                    education=_text(r.get("EDUCATION")),
-                )
-            )
-
-            if r.get("ACCOUNT_NO") and r.get("BANK") and r.get("IFSC_CODE"):
-                banks.append(
-                    BankDetails(
-                        member_id=m_id,
-                        bank_account=str(r["ACCOUNT_NO"]),
-                        bank_name=str(r["BANK"]),
-                        ifsc_code=str(r["IFSC_CODE"]),
-                    )
-                )
-        
-        family_id_counter += 1
-
-    # 4. Truncate target tables non-destructively based on SQL dialect
+    # 4. Truncate target table non-destructively
     engine = get_engine(database_url)
     from database.models import Base
     Base.metadata.create_all(engine)
@@ -171,11 +142,10 @@ def import_excel_dataset(
     # Migration: add phonetic columns to existing databases that pre-date this feature.
     # create_all() only creates missing tables; ALTER TABLE is needed for new columns.
     _PHONETIC_MIGRATIONS = [
-        "ALTER TABLE member ADD COLUMN member_name_phonetic TEXT",
-        "ALTER TABLE member ADD COLUMN father_name_phonetic TEXT",
-        "ALTER TABLE member ADD COLUMN mother_name_phonetic TEXT",
-        "ALTER TABLE member ADD COLUMN spouse_name_phonetic TEXT",
-        "ALTER TABLE family ADD COLUMN family_head_name_phonetic TEXT",
+        "ALTER TABLE citizen ADD COLUMN name_en_phonetic TEXT",
+        "ALTER TABLE citizen ADD COLUMN father_name_en_phonetic TEXT",
+        "ALTER TABLE citizen ADD COLUMN mother_name_en_phonetic TEXT",
+        "ALTER TABLE citizen ADD COLUMN spouce_name_en_phonetic TEXT",
     ]
     with engine.begin() as conn:
         for stmt in _PHONETIC_MIGRATIONS:
@@ -189,28 +159,22 @@ def import_excel_dataset(
     with engine.begin() as conn:
         if dialect_name == "sqlite":
             conn.execute(text("PRAGMA foreign_keys = OFF;"))
-            conn.execute(text("DELETE FROM bank_details;"))
-            conn.execute(text("DELETE FROM member;"))
-            conn.execute(text("DELETE FROM family;"))
+            conn.execute(text("DELETE FROM citizen;"))
             conn.execute(text("PRAGMA foreign_keys = ON;"))
         else:
-            # PostgreSQL or standard ANSI SQL
-            conn.execute(text("TRUNCATE TABLE bank_details, member, family RESTART IDENTITY CASCADE;"))
+            conn.execute(text("TRUNCATE TABLE citizen RESTART IDENTITY CASCADE;"))
 
-    # 5. Bulk ingest data high-performance
-    with get_session(database_url) as session:
-        session.add_all(families)
-        session.add_all(members)
-        session.add_all(banks)
-        session.commit()
+    # 5. Bulk ingest data using SQLAlchemy Core bulk insert in chunks of 50,000
+    chunk_size = 50000
+    with engine.begin() as conn:
+        for i in range(0, len(citizen_dicts), chunk_size):
+            chunk = citizen_dicts[i:i + chunk_size]
+            conn.execute(Citizen.__table__.insert(), chunk)
 
     resolved_name = source_name or getattr(source, "name", None) or str(source)
     return DatasetImportReport(
         source_name=Path(str(resolved_name)).name,
-        members_loaded=len(members),
-        families_loaded=len(families),
-        bank_records_loaded=len(banks),
-        skipped_bank_records=len(members) - len(banks),
+        rows_loaded=len(citizen_dicts),
     )
 
 
@@ -236,12 +200,3 @@ def _date(value):
     if pd.isna(timestamp):
         return None
     return timestamp.date()
-
-
-def _boolean(value) -> bool | None:
-    if value is None or pd.isna(value):
-        return None
-    try:
-        return bool(int(float(value)))
-    except (ValueError, TypeError):
-        return None
